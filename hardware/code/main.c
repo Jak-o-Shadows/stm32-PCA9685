@@ -52,10 +52,13 @@ static void i2c_setup(void){
 	i2c_reset(I2C2);
 	
 	i2c_set_standard_mode(I2C2);
-	i2c_set_clock_frequency(I2C2, I2C_CR2_FREQ_34MHZ); //half system clock
+	i2c_set_clock_frequency(I2C2, I2C_CR2_FREQ_16MHZ); 
 	
-	i2c_set_ccr(I2C2, 4000);
+	i2c_set_ccr(I2C2, 0xAA);
 	i2c_set_dutycycle(I2C2, I2C_CCR_DUTY_DIV2);
+	
+	i2c_set_trise(I2C2, 0x11);
+	
 	i2c_enable_ack(I2C2);
 	
 	
@@ -87,10 +90,11 @@ static void i2cSend(uint32_t i2c, uint8_t addr, uint8_t reg, uint8_t data[], uin
 			
 	//send address
 	i2c_send_7bit_address(i2c, addr, I2C_WRITE);
+	//check for the ack
+	while (!(I2C_SR1(i2c) & I2C_SR1_ADDR));
+	//must read SR2 to clear it
+	reg32 = I2C_SR2(i2c);
 	
-	//cleaning ADDR condition sequence
-	//	have to read here for reasons?
-	reg32 = I2C_SR2(i2c); 
 	
 	i2c_send_data(i2c, reg);
 	while (!(I2C_SR1(i2c) & I2C_SR1_BTF)); //wait for byte transferred flag
@@ -104,8 +108,13 @@ static void i2cSend(uint32_t i2c, uint8_t addr, uint8_t reg, uint8_t data[], uin
 	
 	//send stop condition
 	i2c_send_stop(i2c); 
+	for (int i=0;i<200;i++){
+		__asm__("nop");
+	}
 	
 }
+
+
 
 
 
@@ -125,15 +134,18 @@ int main(void) {
 	uint8_t singleData[1];
 	
 	//set the pwm frequency
-	singleData[0] = 0x04;
+	singleData[0] = 0x10;
 	i2cSend(i2c2, address, 0x00, singleData, 1); //mode1 -> sleep mode
 	singleData[0] = 0x70;
 	i2cSend(i2c2, address, 0xFE, singleData, 1); //prescale reg -> 60hz????
-	singleData[0] = 0x20 | 0x01;
-	i2cSend(i2c2, address, 0x00, singleData, 1);//mode1 -> auto increment | allcall
+	singleData[0] = 0x20 | 0x01 | 0x80; //allcall, auto increment, restart
+	i2cSend(i2c2, address, 0x00, singleData, 1);//mode1 -> auto increment | allcall | restart
 	
-	uint16_t servoLow = 0x30;
-	uint16_t servoHigh = 0x30 + 0xFF;
+	uint16_t servoLow = 150;
+	uint16_t servoHigh = 500;//0x30 + 0xFF;
+	
+	
+
 	
 	uint8_t l1;
 	uint8_t l2;
@@ -149,33 +161,30 @@ int main(void) {
 
 	while (1) {
 		
-		//servo_set_position(SERVO_CH1, SERVO_MAX);
-		
-
-		
 		data[0] = l1;
 		data[1] = l2;
 		data[2] = h1;
 		data[3] = h2;
 		
-		//i2cSend(i2c2, address, 0x06+4*0, data, 4);
+		i2cSend(i2c2, address, 0x06+4*0, data, 4);
 		
-		for (int i=0; i<900000; i++){
+		for (int i=0; i<1800000; i++){
 			__asm__("nop");
 		}
 		gpio_set(GPIOC, GPIO13);
-		
-		//servo_set_position(SERVO_CH1, SERVO_MIN);
-		for (int i=0; i<900000; i++){
-			__asm__("nop");
-		}
-		gpio_clear(GPIOC, GPIO13);
 		
 		data[0] = h1;
 		data[1] = h2;
 		data[2] = l1;
 		data[3] = l2;
-		//i2cSend(i2c2, address, 0x06+4*0, data, 4);
+		i2cSend(i2c2, address, 0x06+4*0, data, 4);
+		
+		for (int i=0; i<1800000; i++){
+			__asm__("nop");
+		}
+		gpio_clear(GPIOC, GPIO13);
+		
+
 
 	}
 
