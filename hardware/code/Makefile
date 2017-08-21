@@ -12,7 +12,7 @@ HL_LIBS =
 include Makefile.config
 
 #LibopenCM3 location
-libopenCM3Path =./libopencm3
+libopenCM3Path = ./libopencm3
 SRCLIBDIR = $(libopenCM3Path)
 
 INCLUDE_DIR = $(libopenCM3Path)/include
@@ -69,7 +69,7 @@ CFLAGS += -fno-common -ffunction-sections -fdata-sections
 
 CFLAGS += -MD
 CFLAGS += -Wall -Wundef
-CFLAGS += -mthumb
+CFLAGS += -mcpu=cortex-m3 -mthumb
 
 
 CFLAGS += -T $(LDSCRIPT)
@@ -147,7 +147,7 @@ clean:
 
 
 openocd:;
-	openocd -s "software\OpenOCD-0.9.0\share\openocd\scripts" -f "openocd.cfg" -c "init" -c "halt" -c "reset halt"
+	openocd -s "\share\openocd\scripts" -f "openocd.cfg" -c "init" -c "halt" -c "reset halt"
 
 debug: main.elf main.bin;
 	$(GDB) --eval-command="target ext:3335"  main.elf

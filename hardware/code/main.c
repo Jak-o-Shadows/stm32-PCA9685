@@ -72,18 +72,9 @@ static void i2cSend(uint32_t i2c, uint8_t addr, uint8_t reg, uint8_t data[], uin
 	
  	uint32_t reg32 __attribute__((unused));
 	
-	reg32 = 3;
-	if (reg32 >= 3) {
-		reg32 = 5;
-	}
-	
 	//send start
 	i2c_send_start(i2c);
-	
-	if (reg32>=5){
-		reg32 = 8;
-	}
-	
+		
 	//wait for the switch to master mode.
 	while (!((I2C_SR1(i2c) & I2C_SR1_SB) & 
 			 (I2C_SR2(i2c) & (I2C_SR2_MSL | I2C_SR2_BUSY))));
@@ -115,6 +106,24 @@ static void i2cSend(uint32_t i2c, uint8_t addr, uint8_t reg, uint8_t data[], uin
 }
 
 
+uint16_t servoValue(uint8_t servoPos){
+	//for a max/min, find the pwm length
+	//working in uS, find the number of steps for the x, y ms length pulses
+	// *0.9 due to inaccuracy in the frequency (55hz) used
+	//		experimentally found
+	uint32_t servoLow = (0.4*1000)/((1000000*1/54/4096))*0.9;
+	uint32_t servoHigh =(2.7*1000)/((1000000*1/54/4096))*0.9;
+
+	uint8_t maxServo = 180;
+	uint8_t minServo = 0;
+	
+	uint32_t proportion = (maxServo-servoPos)*(servoHigh-servoLow)/(maxServo-minServo) + servoLow;
+	
+	uint16_t retVal = (uint16_t) proportion;
+	
+	return retVal;
+		
+}
 
 
 
@@ -141,45 +150,47 @@ int main(void) {
 	singleData[0] = 0x20 | 0x01 | 0x80; //allcall, auto increment, restart
 	i2cSend(i2c2, address, 0x00, singleData, 1);//mode1 -> auto increment | allcall | restart
 	
-	uint16_t servoLow = 150;
-	uint16_t servoHigh = 500;//0x30 + 0xFF;
 	
 	
-
+	//working in uS, find the number of steps for the x, y ms length pulses
+	// *0.9 due to inaccuracy in the frequency (55hz) used
+	//		experimentally found
+	uint16_t servoLow = (0.4*1000)/((1000000*1/54/4096))*0.9;
+	uint16_t servoHigh =(2.7*1000)/((1000000*1/54/4096))*0.9;
 	
-	uint8_t l1;
-	uint8_t l2;
-	uint8_t h1;
-	uint8_t h2;
+	uint16_t servoPos = servoValue(90);
 	
-	l1 = (uint8_t) servoLow;
-	l2 = (uint8_t) (servoLow>>8);
-	h1 = (uint8_t) servoHigh;
-	h2 = (uint8_t) (servoHigh>>8);
+	uint8_t pos1[4];
+	uint8_t pos2[4];
+	pos1[1] = 0x00;
+	pos1[0] = 0x30;
+	pos1[2] = (uint8_t) (0x30+servoLow);
+	pos1[3] = (uint8_t) ((0x30+servoLow) >> 8);
 	
-	//servo_init();
+	pos2[1] = 0x00;
+	pos2[0] = 0x30;
+	//pos2[2] = (uint8_t) (0x30+servoHigh);
+	//pos2[3] = (uint8_t) ((0x30+servoHigh)>>8);
+	pos2[2] = (uint8_t) (0x30+servoPos);
+	pos2[3] = (uint8_t) ((0x30+servoPos)>>8);
+	
+	
 
 	while (1) {
 		
-		data[0] = l1;
-		data[1] = l2;
-		data[2] = h1;
-		data[3] = h2;
 		
-		i2cSend(i2c2, address, 0x06+4*0, data, 4);
+		i2cSend(i2c2, address, 0x06+4*0, pos1, 4);
+
 		
-		for (int i=0; i<1800000; i++){
+		for (int i=0; i<2400000; i++){
 			__asm__("nop");
 		}
 		gpio_set(GPIOC, GPIO13);
 		
-		data[0] = h1;
-		data[1] = h2;
-		data[2] = l1;
-		data[3] = l2;
-		i2cSend(i2c2, address, 0x06+4*0, data, 4);
+		i2cSend(i2c2, address, 0x06+4*0, pos2, 4);
+
 		
-		for (int i=0; i<1800000; i++){
+		for (int i=0; i<2400000; i++){
 			__asm__("nop");
 		}
 		gpio_clear(GPIOC, GPIO13);
