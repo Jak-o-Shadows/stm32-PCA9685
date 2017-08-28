@@ -304,6 +304,7 @@ class ThreadHelper():
             
     def recvThread(self):
         keepGoing = True
+        keepGoing = False
         while keepGoing:
             data = self.protocol.read()
             try:
