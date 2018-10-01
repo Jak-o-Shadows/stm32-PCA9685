@@ -2,24 +2,29 @@
 
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
-#include <libopencm3/stm32/usart.h>
 #include <libopencm3/stm32/f1/i2c.h>
+#include <libopencm3/stm32/timer.h>
 
 #include <libopencm3/cm3/nvic.h>
 
 #include <stdint.h>
 
 
-#define NUMSERVOS 16
+#define NUMCHANNELS 16
 
 #include "main.h"
 
-uint16_t positionCache[32];
-uint16_t position[32];
+uint16_t mode = 0;
 
-//comms side stuff
-uint8_t rxBuf[4];
-uint8_t rxCount = 0;
+uint32_t timeCount = 0;
+uint32_t maxTimeCount = 300;
+uint32_t key[] = {100, 0, 200};
+uint16_t val[] = {0xFFFF, 0xFF, 0x1FF};
+uint16_t oldVal = 0x00;
+uint32_t numElements = 3;
+
+
+
 
 
 void clock_setup(void)
@@ -41,33 +46,6 @@ void clock_setup(void)
 	
 }
 
-void usart_setup(void)
-{
-	/* Enable the USART1 interrupt. */
-	nvic_enable_irq(NVIC_USART1_IRQ);
-
-	/* Setup GPIO pin GPIO_USART1_RE_TX on GPIO port B for transmit. */
-	gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ,
-		      GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX);
-
-	/* Setup GPIO pin GPIO_USART1_RE_RX on GPIO port A for receive. */
-	gpio_set_mode(GPIOA, GPIO_MODE_INPUT,
-		      GPIO_CNF_INPUT_FLOAT, GPIO_USART1_RX);
-
-	/* Setup UART parameters. */
-	usart_set_baudrate(USART1, 9600);
-	usart_set_databits(USART1, 8);
-	usart_set_stopbits(USART1, USART_STOPBITS_1);
-	usart_set_parity(USART1, USART_PARITY_NONE);
-	usart_set_flow_control(USART1, USART_FLOWCONTROL_NONE);
-	usart_set_mode(USART1, USART_MODE_TX_RX);
-
-	/* Enable USART1 Receive interrupt. */
-	USART_CR1(USART1) |= USART_CR1_RXNEIE;
-
-	/* Finally enable the USART. */
-	usart_enable(USART1);
-}
 
 void gpio_setup(void)
 {
@@ -83,6 +61,37 @@ void gpio_setup(void)
 				  GPIO10 | GPIO11); //B10 =SCL, B11=SDA
 		//		  GPIO6 | GPIO7);
 }
+
+
+void timer_setup(void){
+	
+	rcc_periph_clock_enable(RCC_TIM2);
+	
+	nvic_enable_irq(NVIC_TIM2_IRQ);
+	
+	rcc_periph_reset_pulse(RST_TIM2);
+	
+	//Timer global mode:
+	//	no divider
+	//	alignmetn edge
+	//	direction up
+	timer_set_mode(TIM2, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
+	
+	//see loc3 examples, stm32-h103/timer/timer.c
+	timer_set_prescaler(TIM2, 1); //was 250
+	
+	timer_disable_preload(TIM2);
+	timer_continuous_mode(TIM2);
+	
+	timer_set_period(TIM2, 65535);
+	
+	timer_set_oc_value(TIM2, TIM_OC1, 1000); //was 10000
+	
+	timer_enable_counter(TIM2);
+	
+	timer_enable_irq(TIM2, TIM_DIER_CC1IE);
+}
+
 
 /////////////////////////////////////////////////////////
 ////////// PCA9685 Servo Stuff //////////////////////////
@@ -150,25 +159,6 @@ void i2cSend(uint32_t i2c, uint8_t addr, uint8_t reg, uint8_t data[], uint8_t nu
 }
 
 
-uint16_t servoValue(uint8_t servoPos){
-	//Convert an angle (int) to servo pulse length
-	
-	//for a max/min, find the pwm length
-	//working in uS, find the number of steps for the x, y ms length pulses
-	// *0.9 due to inaccuracy in the frequency (55hz) used
-	//		experimentally found
-	uint32_t servoLow = (0.4*1000)/((1000000*1/54/4096))*0.9;
-	uint32_t servoHigh =(2.7*1000)/((1000000*1/54/4096))*0.9;
-
-	uint8_t maxServo = 180;
-	uint8_t minServo = 0;
-	
-	uint32_t proportion = (maxServo-servoPos)*(servoHigh-servoLow)/(maxServo-minServo) + servoLow;
-	
-	uint16_t retVal = (uint16_t) proportion;
-	
-	return retVal;
-}
 
 void setServoPos(uint8_t servo, uint16_t pos){
 	//pos is the pwm value given to the pwm controller
@@ -180,55 +170,8 @@ void setServoPos(uint8_t servo, uint16_t pos){
 	i2cSend(I2C2, 0x80 >> 1, 0x06+4*servo, data, 4);
 }
 
-uint16_t widthToPos(uint8_t width){
-	//Convert a 0-0xFF number to a servo pulse length
-	
-	//for a max/min, find the pwm length
-	//working in uS, find the number of steps for the x, y ms length pulses
-	// *0.9 due to inaccuracy in the frequency (55hz) used
-	//		experimentally found
-	uint32_t servoLow = (0.4*1000)/((1000000*1/54/4096))*0.9;
-	uint32_t servoHigh =(2.7*1000)/((1000000*1/54/4096))*0.9;
-
-	uint8_t maxServo = 0xFF;
-	uint8_t minServo = 0;
-	
-	uint32_t proportion = (maxServo-width)*(servoHigh-servoLow)/(maxServo-minServo) + servoLow;
-	
-	uint16_t retVal = (uint16_t) proportion;
-
-	return retVal;
-}
-
-/////////////////////////////////////////////////////
-////////////// Comms Stuff //////////////////////////
-/////////////////////////////////////////////////////
 
 
-
-void handlePacket(uint8_t pckt[]) {
-	
-	if (pckt[0] == 0xFF) {
-		uint8_t pos = pckt[2];
-		if (pckt[1] < 32 ) {
-			//immediate move
-			position[pckt[1]] = widthToPos(pos);
-			setServoPos(pckt[1], position[pckt[1]]);
-		} else if (pckt[1] < 64) {
-			//cache position
-			positionCache[pckt[1]-32] = widthToPos(pos);
-		} else if (pckt[1] == 0xFF){
-			//apply cached position
-			for (int i=0; i<NUMSERVOS; i++){
-				setServoPos(i, positionCache[i]);
-			}
-		} 
-	} else {
-		__asm__("nop"); //woah, out of sync somehow
-	}
-	
-	
-}
 
 
 ////////////////////////////////////////////////
@@ -239,7 +182,6 @@ int main(void)
 {
 	clock_setup();
 	gpio_setup();
-	usart_setup();
 	i2c_setup();
 	
 	
@@ -257,55 +199,101 @@ int main(void)
 	singleData[0] = 0x20 | 0x01 | 0x80; //allcall, auto increment, restart
 	i2cSend(i2c2, address, 0x00, singleData, 1);//mode1 -> auto increment | allcall | restart */
 	
+	//Initialise to full on
+	for (int i=0; i<NUMCHANNELS; i++){
+		setServoPos(i, 0xFFFF);
+	}
 	
-	
-	
+	timer_setup();
+
 
 	/* Wait forever and do nothing. */
-	while (1)
-		__asm__("nop");
-
+	while (1) {
+/* 		for (int i=0;i<1000000;i++){
+			__asm__("nop");
+		}
+		for (int i=0; i<NUMCHANNELS; i++){
+			setServoPos(i, 0x00);
+		}
+		for (int i=0;i<1000000;i++){
+			__asm__("nop");
+		}
+		for (int i=0; i<NUMCHANNELS; i++){
+			setServoPos(i, 0xFFFF);
+		} */
+	}
 	return 0;
 }
 
+/////////////////////////////////////////////////
+// ////////////////// INTERRUPTS ///////////////
+/////////////////////////////////////////////
 
-void usart1_isr(void)
-{
-	static uint8_t data = 'A';
 
-	/* Check if we were called because of RXNE. */
-	if (((USART_CR1(USART1) & USART_CR1_RXNEIE) != 0) &&
-	    ((USART_SR(USART1) & USART_SR_RXNE) != 0)) {
-
-		/* Indicate that we got data. */
-		gpio_toggle(GPIOC, GPIO13);
-
-		/* Retrieve the data from the peripheral. */
-		data = usart_recv(USART1);
-		rxBuf[rxCount] = data;
-		rxCount++;
-		if (rxCount>=3) {
-			rxCount = 0;
-			handlePacket(rxBuf);
+void tim2_isr(void) {
+	if (timer_get_flag(TIM2, TIM_SR_CC1IF)){
+		timer_clear_flag(TIM2, TIM_SR_CC1IF);
+		
+		//uint16_t counter = timer_get_counter(TIM2);
+		
+		timeCount++;
+		
+		uint32_t node = 1;
+		uint32_t oldNode = 1;
+		uint32_t parentNode = 2;
+		uint32_t newNode;
+		while (node<=numElements){
+			if (timeCount > key[node-1]){
+				parentNode = node;
+				oldNode = node;
+				node = 2*node + 1;
+			} else if (timeCount < key[node-1]){
+				newNode = 2*node;
+				if (newNode >= numElements){
+					oldNode = parentNode;
+					break;
+				}
+				parentNode = oldNode;
+				oldNode = node;
+				node = newNode;
+			} else {
+				oldNode = node;
+				break;
+			}
 		}
-
-		/* Enable transmit interrupt so it sends back the data. */
-		USART_CR1(USART1) |= USART_CR1_TXEIE;
-	}
-
-	/* Check if we were called because of TXE. */
-	if (((USART_CR1(USART1) & USART_CR1_TXEIE) != 0) &&
-	    ((USART_SR(USART1) & USART_SR_TXE) != 0)) {
-
-		/* Indicate that we are sending out data. */
-		// gpio_toggle(GPIOA, GPIO7);
-
-		/* Put data into the transmit register. */
-		usart_send(USART1, data);
-
-		/* Disable the TXE interrupt as we don't need it anymore. */
-		USART_CR1(USART1) &= ~USART_CR1_TXEIE;
+		uint16_t v = val[oldNode-1];
+		if (v != oldVal){
+		//	for (int i=1; i<NUMCHANNELS; i++){
+		//		setServoPos(i, v);
+		//	}
+			setServoPos(14, oldVal);
+			setServoPos(15, v);
+			oldVal = v;
+		}
+		
+		if (timeCount>maxTimeCount){
+			timeCount = 0;
+		}
+		
+		
+/* 		if (mode == 0) {
+			for (int i=0; i<NUMCHANNELS; i++){
+				setServoPos(i, 0xFFFF);
+			}
+			mode = 1;
+		} else {
+			for (int i=0; i<NUMCHANNELS; i++){
+				setServoPos(i, 0x00);
+			}
+			mode = 0;
+		} */
+		
+		gpio_toggle(GPIOC, GPIO13);
+		
+		
 	}
 }
+
+
 
 
