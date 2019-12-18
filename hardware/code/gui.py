@@ -22,14 +22,14 @@ class ServoWindow(wx.Frame):
         kwds["style"] = wx.DEFAULT_FRAME_STYLE
         wx.Frame.__init__(self, *args, **kwds)
         self.sliders = []
-        for i in xrange(16):
+        for i in range(16):
             self.sliders.append(wx.Slider(self, -1, 0x7F, 0, 0xFF, style=wx.SL_VERTICAL|wx.SL_AUTOTICKS|wx.SL_LABELS|wx.SL_LEFT))
             self.Bind(wx.EVT_COMMAND_SCROLL, self.updateServo, self.sliders[-1])
         #self.slider_0 = wx.Slider(self, -1, 90, 0, 180, style=wx.SL_VERTICAL|wx.SL_AUTOTICKS|wx.SL_LABELS|wx.SL_LEFT)
 
         self.__set_properties()
         self.__do_layout()
-        self.values = [0x7f for x in xrange(len(self.sliders))]
+        self.values = [0x7f for x in range(len(self.sliders))]
         
         #from mouseVPython
         self.Bind(wx.EVT_MENU, self.onKeyCombo, id=314)
@@ -41,7 +41,7 @@ class ServoWindow(wx.Frame):
  
     def onKeyCombo(self, event):
         """"""
-        print "You pressed CTRL+Q!"       
+        print("You pressed CTRL+Q!")
         
         
 
@@ -51,7 +51,7 @@ class ServoWindow(wx.Frame):
     def setupConnStuff(self):
         #self.th = conn.ThreadHelper(conn.SocketProtocol, conn.message)
         self.th = conn.ThreadHelper(conn.SerialProtocol, lambda x: x)
-        self.th.protocol.port = "COM5"
+        self.th.protocol.port = "COM8"
         self.th.protocol.baud = 9600
         #self.th = conn.ThreadHelper(conn.BluetoothProtocol, conn.message)
         #self.th.protocol.MAC = "00:13:04:07:07:15"
@@ -70,7 +70,7 @@ class ServoWindow(wx.Frame):
         horiSizer = wx.BoxSizer(wx.HORIZONTAL)
         vertiSizer = wx.BoxSizer(wx.VERTICAL)
         vertiSizers = []
-        for i in xrange(len(self.sliders)):
+        for i in range(len(self.sliders)):
             vertiSizers.append(wx.BoxSizer(wx.VERTICAL))
             vertiSizers[i].Add(self.sliders[i], 0, 0, 0, 0)
             vertiSizers[i].Add(wx.StaticText(self, -1, str(i), (20, 10)))
@@ -87,12 +87,17 @@ class ServoWindow(wx.Frame):
         # end wxGlade
 
     def updateServo(self, event): # wxGlade: ServoWindow.<event_handler>
+    
+        def convert(num):
+            uint8_t = hex(num)[2:].zfill(2)
+            return uint8_t
+    
         newValues = [slider.Value for slider in self.sliders]
-        for pos in xrange(len(newValues)):
+        for pos in range(len(newValues)):
             if newValues[pos] != self.values[pos]:
                 sendNum = [0xFF, pos, newValues[pos]]
-                sendString = "".join([chr(x) for x in sendNum])
-                print sendNum
+                sendString = "".join([convert(x) for x in sendNum])
+                print(sendNum)
                 self.th.sendQueue.put(sendString)
                 #print pos, "updated to", newValues[pos]
         self.values = newValues

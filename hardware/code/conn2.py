@@ -4,12 +4,12 @@ Created on Tue Jul 09 17:15:30 2013
 @author: Jak
 Handles the connection and queues and threading
 """
-from __future__ import print_function #running this same code in python 2.7.3
 import socket
 import threading
 import time
 #import io
 import sys
+import binascii
 
 class Protocol():
     """Implements the actual send/recieve interface"""
@@ -117,7 +117,8 @@ try:
         def send(self, msg):
             #self.sio.write(unicode(msg))
             #self.ser.write(unicode(msg))
-            self.ser.write(msg)
+            binary = binascii.unhexlify(msg)
+            self.ser.write(binary)
             if self.logFile:
                 self.logFile.write("O:" + hex(ord(msg)) + "\n")
                 self.logFile.flush()
@@ -227,7 +228,7 @@ try:
     
     
     
-except ImportError, e:
+except ImportError as e:
     print("USB Unavailable")
     print(e)
     
