@@ -46,7 +46,7 @@ OBJS += $(BINARY).o $(HL_LIBS:.c=.o)
 
 
 
-toolchainPath ?= ~/arm-none-eabi/bin/
+toolchainPath ?= 
 
 PREFIX		?= $(toolchainPath)arm-none-eabi
 
@@ -147,7 +147,7 @@ clean:
 
 
 openocd:;
-	openocd -s "\share\openocd\scripts" -f "openocd.cfg" -c "init" -c "halt" -c "reset halt"
+	openocd -s "E:\Tools\arm-none-eabi\8 2019-q3-update\bin\scripts" -f "openocd.cfg" -c "init" -c "halt" -c "reset halt"
 
 debug: main.elf main.bin;
 	$(GDB) --eval-command="target ext:3335"  main.elf
