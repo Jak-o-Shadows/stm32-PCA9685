@@ -29,10 +29,11 @@ void clock_setup(void)
 	/* Enable GPIOA clock (for LED GPIOs). */
 	rcc_periph_clock_enable(RCC_GPIOC);
 
-	/* Enable clocks for GPIO port A (for GPIO_USART1_TX) and USART1. */
 	rcc_periph_clock_enable(RCC_GPIOA);
+	
+	/* Enable clocks for GPIO port A (for GPIO_USART2_TX) and USART2. */
+	rcc_periph_clock_enable(RCC_USART2);
 	rcc_periph_clock_enable(RCC_AFIO);
-	rcc_periph_clock_enable(RCC_USART1);
 	
 	rcc_periph_clock_enable(RCC_GPIOB);
 	//I2C
@@ -43,30 +44,29 @@ void clock_setup(void)
 
 void usart_setup(void)
 {
-	/* Enable the USART1 interrupt. */
-	nvic_enable_irq(NVIC_USART1_IRQ);
+	rcc_periph_clock_enable(RCC_GPIOA);
+	rcc_periph_clock_enable(RCC_USART2);
 
-	/* Setup GPIO pin GPIO_USART1_RE_TX on GPIO port B for transmit. */
-	gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ,
-		      GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO_USART1_TX);
+	gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, GPIO2); //USART 2 TX is A2
+	gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_FLOAT, GPIO3); //USART 2 RX is A3
 
-	/* Setup GPIO pin GPIO_USART1_RE_RX on GPIO port A for receive. */
-	gpio_set_mode(GPIOA, GPIO_MODE_INPUT,
-		      GPIO_CNF_INPUT_FLOAT, GPIO_USART1_RX);
+	usart_set_baudrate(USART2, 9600);
+	usart_set_databits(USART2, 8);
+	usart_set_stopbits(USART2, USART_STOPBITS_1);
+	usart_set_parity(USART2, USART_PARITY_NONE);
+	usart_set_mode(USART2, USART_MODE_TX_RX);
+	usart_set_flow_control(USART2, USART_FLOWCONTROL_NONE);
+	//enable interrupt rx
+	USART_CR1(USART2) |= USART_CR1_RXNEIE;
 
-	/* Setup UART parameters. */
-	usart_set_baudrate(USART1, 9600);
-	usart_set_databits(USART1, 8);
-	usart_set_stopbits(USART1, USART_STOPBITS_1);
-	usart_set_parity(USART1, USART_PARITY_NONE);
-	usart_set_flow_control(USART1, USART_FLOWCONTROL_NONE);
-	usart_set_mode(USART1, USART_MODE_TX_RX);
+	usart_enable(USART2);
+}
 
-	/* Enable USART1 Receive interrupt. */
-	USART_CR1(USART1) |= USART_CR1_RXNEIE;
-
-	/* Finally enable the USART. */
-	usart_enable(USART1);
+static void nvic_setup(void)
+{
+	/* Without this the RTC interrupt routine will never be called. */
+	nvic_enable_irq(NVIC_USART2_IRQ);
+	nvic_set_priority(NVIC_USART2_IRQ, 2);
 }
 
 void gpio_setup(void)
@@ -208,6 +208,8 @@ uint16_t widthToPos(uint8_t width){
 
 void handlePacket(uint8_t pckt[]) {
 	
+	gpio_toggle(GPIOC, GPIO13);
+	
 	if (pckt[0] == 0xFF) {
 		uint8_t pos = pckt[2];
 		if (pckt[1] < 32 ) {
@@ -241,6 +243,7 @@ int main(void)
 	gpio_setup();
 	usart_setup();
 	i2c_setup();
+	nvic_setup();
 	
 	
 	uint32_t i2c2 = I2C2; //i2c2
@@ -258,30 +261,57 @@ int main(void)
 	i2cSend(i2c2, address, 0x00, singleData, 1);//mode1 -> auto increment | allcall | restart */
 	
 	
+	for (int i=0; i<NUMSERVOS; i++){
+		setServoPos(i, widthToPos(0x27));
+	}
 	
-	
-
-	/* Wait forever and do nothing. */
-	while (1)
+	while (1) {
 		__asm__("nop");
-
+	}
+	
+	uint8_t pos = 0x27;
+	int increment = 1;
+	while (1) {
+		gpio_toggle(GPIOC, GPIO13);
+		for (int i=0; i<1000;i++){
+			__asm__("nop");
+		}
+		pos = pos + increment;
+		for (int n=0;n<NUMSERVOS;n++){
+			// Every other servo is installed upside down, for mechanical reasons
+			if (n % 2){
+				setServoPos(n, widthToPos(255-pos));
+			} else {
+				setServoPos(n, widthToPos(pos));
+			}
+			for (int delay=0;delay<10;delay++){
+				__asm__("nop");
+			}
+		}
+		if (pos > 253){
+			increment = -1;
+		}
+		if (pos < 100){
+			increment = 1;
+		}
+	}
 	return 0;
 }
 
 
-void usart1_isr(void)
+void usart2_isr(void)
 {
 	static uint8_t data = 'A';
 
 	/* Check if we were called because of RXNE. */
-	if (((USART_CR1(USART1) & USART_CR1_RXNEIE) != 0) &&
-	    ((USART_SR(USART1) & USART_SR_RXNE) != 0)) {
+	if (((USART_CR1(USART2) & USART_CR1_RXNEIE) != 0) &&
+	    ((USART_SR(USART2) & USART_SR_RXNE) != 0)) {
 
 		/* Indicate that we got data. */
 		gpio_toggle(GPIOC, GPIO13);
 
 		/* Retrieve the data from the peripheral. */
-		data = usart_recv(USART1);
+		data = usart_recv(USART2);
 		rxBuf[rxCount] = data;
 		rxCount++;
 		if (rxCount>=3) {
@@ -290,21 +320,21 @@ void usart1_isr(void)
 		}
 
 		/* Enable transmit interrupt so it sends back the data. */
-		USART_CR1(USART1) |= USART_CR1_TXEIE;
+		USART_CR1(USART2) |= USART_CR1_TXEIE;
 	}
 
 	/* Check if we were called because of TXE. */
-	if (((USART_CR1(USART1) & USART_CR1_TXEIE) != 0) &&
-	    ((USART_SR(USART1) & USART_SR_TXE) != 0)) {
+	if (((USART_CR1(USART2) & USART_CR1_TXEIE) != 0) &&
+	    ((USART_SR(USART2) & USART_SR_TXE) != 0)) {
 
 		/* Indicate that we are sending out data. */
 		// gpio_toggle(GPIOA, GPIO7);
 
 		/* Put data into the transmit register. */
-		usart_send(USART1, data);
+		usart_send(USART2, data);
 
 		/* Disable the TXE interrupt as we don't need it anymore. */
-		USART_CR1(USART1) &= ~USART_CR1_TXEIE;
+		USART_CR1(USART2) &= ~USART_CR1_TXEIE;
 	}
 }
 
