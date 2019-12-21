@@ -262,7 +262,7 @@ int main(void)
 	
 	
 	for (int i=0; i<NUMSERVOS; i++){
-		setServoPos(i, widthToPos(0x27));
+		setServoPos(i, widthToPos(0x7F));
 	}
 	
 	while (1) {
