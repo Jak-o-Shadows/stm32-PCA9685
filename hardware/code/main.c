@@ -3,6 +3,7 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/usart.h>
+#include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/f1/i2c.h>
 
 #include <libopencm3/cm3/nvic.h>
@@ -16,6 +17,8 @@
 
 uint16_t positionCache[32];
 uint16_t position[32];
+uint16_t updatePeriod_ms = 100;
+uint16_t updateCounter_ms = 0;
 
 //comms side stuff
 uint8_t rxBuf[4];
@@ -82,6 +85,39 @@ void gpio_setup(void)
 				  GPIO_CNF_OUTPUT_ALTFN_OPENDRAIN,
 				  GPIO10 | GPIO11); //B10 =SCL, B11=SDA
 		//		  GPIO6 | GPIO7);
+}
+
+
+void timer_setup(void){
+	
+	rcc_periph_clock_enable(RCC_TIM2);
+	
+	nvic_enable_irq(NVIC_TIM2_IRQ);
+	
+	rcc_periph_reset_pulse(RST_TIM2);
+	
+	//Timer global mode:
+	//	no divider
+	//	alignment edge
+	//	direction up
+	timer_set_mode(TIM2, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
+	
+	// Note that TIM2 on APB1 is running at double frequency according to 
+	//	https://github.com/libopencm3/libopencm3-examples/blob/master/examples/stm32/f1/stm32-h103/timer/timer.c
+	timer_set_prescaler(TIM2, ((rcc_apb1_frequency  *2)/10000));
+	
+	// Disable preload
+	timer_disable_preload(TIM2);
+	timer_continuous_mode(TIM2);
+	
+	// Count the full range, as the compare value is used to set the value
+	timer_set_period(TIM2, 65535);
+	
+	timer_set_oc_value(TIM2, TIM_OC1, 10); //was 10000
+	
+	timer_enable_counter(TIM2);
+	
+	timer_enable_irq(TIM2, TIM_DIER_CC1IE);
 }
 
 /////////////////////////////////////////////////////////
@@ -207,9 +243,7 @@ uint16_t widthToPos(uint8_t width){
 
 
 void handlePacket(uint8_t pckt[]) {
-	
-	gpio_toggle(GPIOC, GPIO13);
-	
+		
 	if (pckt[0] == 0xFF) {
 		uint8_t pos = pckt[2];
 		if (pckt[1] < 32 ) {
@@ -241,6 +275,7 @@ int main(void)
 {
 	clock_setup();
 	gpio_setup();
+	timer_setup();
 	usart_setup();
 	i2c_setup();
 	nvic_setup();
@@ -272,7 +307,6 @@ int main(void)
 	uint8_t pos = 0x27;
 	int increment = 1;
 	while (1) {
-		gpio_toggle(GPIOC, GPIO13);
 		for (int i=0; i<1000;i++){
 			__asm__("nop");
 		}
@@ -307,9 +341,6 @@ void usart2_isr(void)
 	if (((USART_CR1(USART2) & USART_CR1_RXNEIE) != 0) &&
 	    ((USART_SR(USART2) & USART_SR_RXNE) != 0)) {
 
-		/* Indicate that we got data. */
-		gpio_toggle(GPIOC, GPIO13);
-
 		/* Retrieve the data from the peripheral. */
 		data = usart_recv(USART2);
 		rxBuf[rxCount] = data;
@@ -338,4 +369,25 @@ void usart2_isr(void)
 	}
 }
 
-
+void tim2_isr(void)
+{
+	// This timer ticks every 1ms
+	if (timer_get_flag(TIM2, TIM_SR_CC1IF)){
+		timer_clear_flag(TIM2, TIM_SR_CC1IF);
+		
+		// Setup next compare time
+		uint16_t compare_time = timer_get_counter(TIM2);
+		timer_set_oc_value(TIM2, TIM_OC1, 10+compare_time);
+		
+		// Only update at a specific rate
+		updateCounter_ms++;
+		if (updateCounter_ms >= updatePeriod_ms) 
+		{
+			// Reset counter
+			updateCounter_ms = 0;
+			
+			// Do work
+			gpio_toggle(GPIOC, GPIO13);
+		}
+	}
+}
