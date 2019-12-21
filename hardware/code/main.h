@@ -2,8 +2,8 @@
 #define MAINFILE
 
 
-void clock_setup(void);
-void gpio_setup(void);
+static void clock_setup(void);
+static void gpio_setup(void);
 
 void i2c_setup(void);
 void i2cSend(uint32_t i2c, uint8_t addr, uint8_t reg, uint8_t data[], uint8_t numData);
