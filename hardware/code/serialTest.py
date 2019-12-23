@@ -96,10 +96,11 @@ def textcolor(arg):
 
 def mainMenu():
 
-    functionDict = {1: menu1,
-                    2: menu2,
-                    3: menu3,
-                    6: menu6}
+    functionDict = {1:  menu1,
+                    2:  menu2,
+                    3:  menu3,
+                    6:  menu6,
+                    10: menu10}
 
     choice = -1
     while( choice != 99):
@@ -176,8 +177,16 @@ def menu6():
     while (argument < 0) or (argument > 1025):
         argument = int(input("What position? (0 to 1023) "))
     sendCommand(SETPOSITION, Uint8_t(argument))
-    
 
+def menu10():
+    """
+    Set Cached Position
+    """
+    argument = -1
+    while (argument < 0) or (argument > 1025):
+        argument = int(input("What position? (0 to 1023) "))
+    sendCommand(CACHEPOS, Uint8_t(argument))
+    
 if __name__ == "__main__":
     mainMenu()
 
