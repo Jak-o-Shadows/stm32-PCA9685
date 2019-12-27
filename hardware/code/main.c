@@ -71,7 +71,7 @@ uint16_t cmdpos[NUMSERVOS];
 uint16_t _cmdpos[NUMSERVOS];
 uint8_t listen[NUMSERVOS];
 
-uint16_t updatePeriod_ms = 100;
+uint16_t updatePeriod_ms = 30;
 uint16_t updateCounter_ms = 0;
 
 //comms side stuff

@@ -100,6 +100,7 @@ def mainMenu():
                     2:  menu2,
                     3:  menu3,
                     6:  menu6,
+                    9:  menu9,
                     10: menu10}
 
     choice = -1
@@ -177,6 +178,12 @@ def menu6():
     while (argument < 0) or (argument > 1025):
         argument = int(input("What position? (0 to 1023) "))
     sendCommand(SETPOSITION, Uint8_t(argument))
+
+def menu9():
+    """
+    Execute cache position for all servos
+    """
+    sendCommand(SETFLAGS, Uint8_t(0x01 << EXECPOS.numeric))
 
 def menu10():
     """
