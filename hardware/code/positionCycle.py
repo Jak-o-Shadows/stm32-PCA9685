@@ -1,41 +1,53 @@
 
 import math
-import itertools
 from collections import namedtuple
-
 import time
 
-import serialTest as protocol
+import protocol
+
+port = "COM8"
+baud = 9600
+
+p = protocol.RueP()
+p.connect(port, baud)
+
+
 
 def angleToValue(angle_deg: float) -> int:
-    minValue = 100+30
-    maxValue = 400+30
+    minValue = 30 + int(0.9/5e-3)  # Offset + counts - 5us per count, 0.9ms pulse
+    maxValue = 30 + int(2.14/5e-3)  # Offset + counts - 5us per count, 2.14ms pulse
     midValue = 306+30  # 1.5ms
 
     
-    minAngle_deg = 0
+    minAngle_deg = 45
     midAngle_deg = 90
-    maxAngle_deg = 180
+    maxAngle_deg = 155
     
     # Hence convert
-    valuePerDegree = (maxValue-minValue)/(maxAngle_deg-minAngle_deg)
-    value = (angle_deg-minAngle_deg)*valuePerDegree + minValue
+    if angle_deg >= midAngle_deg:
+        valuePerDegree = (maxValue-midValue)/(maxAngle_deg-midAngle_deg)
+        startAngle = midAngle_deg
+        start = midValue
+    else:
+        valuePerDegree = (midValue-minValue)/(midAngle_deg-minAngle_deg)
+        startAngle = minAngle_deg
+        start = midValue
+        
+    print("v/a", valuePerDegree)
+    print("sa", startAngle)
+    print("sv", start)
+    value = (angle_deg-startAngle)*valuePerDegree + start
     
     return int(math.floor(value))
-    
 
-def dismissAll():
-    """
-    Dismiss all servos from listening
-    """
-    protocol.sendCommand(protocol.IGNORE, protocol.Uint8_t(256))
+
 
 def positionCacheSet(posCollection):
     """
     Set the position cache for the various positions
     """
     # Dismiss all first, as some may be previously listening
-    dismissAll()
+    p.dismissAll()
     
     # Then set cache for each
     for pos in posCollection:
@@ -46,21 +58,15 @@ def positionCacheSet(posCollection):
         # Do listen once command for each servo
         for servoID in pos.servoIDs:
             # Set listen once for this servo
-            protocol.sendCommand(protocol.LISTENONCE, protocol.Uint8_t(servoID))
+            p.sendCommand(p.LISTENONCE, protocol.Uint8_t(servoID))
         
         # Do set position cache for each servo
-        protocol.sendCommand(protocol.CACHEPOS, protocol.Uint8_t(value))
+        p.sendCommand(p.CACHEPOS, protocol.Uint8_t(value))
     
     # Be a good neighbour and dismiss all
-    dismissAll()
+    p.dismissAll()
 
-def positionCacheExecute(servoIDs):
-    """
-    Execute the cached position for the specified servoIDs
-    """
-    # Move to cached position command
-    #   Note that we don't need to issue a 'listen' command here
-    protocol.sendCommand(protocol.SETFLAGS, protocol.Uint8_t(0x01 << protocol.EXECPOS.numeric))
+
 
 if __name__ == "__main__":
     
@@ -72,23 +78,24 @@ if __name__ == "__main__":
     positions = [pos1, pos2]
 
     positions = []
-    for x in [45, 90, 90+45]:#range(45, 90+45, 5):
+    o = 60
+    for x in [90-o, 90, 90+o]:#range(45, 90+45, 5):
         posEven = Position(    x, list(range(0, 16, 2)))
         posOdd =  Position(180-x, list(range(1, 16, 2)))
         positions.append([posEven, posOdd])
-    for x in [45, 90, 90+45]:#range(45, 90+45, 5):
+    for x in [90-o, 90, 90+o]:#range(45, 90+45, 5):
         posEven = Position(180-x, list(range(0, 16, 2)))
         posOdd =  Position(    x, list(range(1, 16, 2)))
         positions.append([posEven, posOdd])
 
-    for repeatIdx in range(10):
+    for repeatIdx in range(1):
         for pos in positions:
             print("")
             print(pos)
             #input("\tSet?")
             positionCacheSet(pos)
             #input("\tExecute?")
-            positionCacheExecute(itertools.chain(*[x.servoIDs for x in pos]))
+            p.positionCacheExecute()
             time.sleep(0.5)
 
 
