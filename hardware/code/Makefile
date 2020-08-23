@@ -14,6 +14,8 @@ include Makefile.config
 #LibopenCM3 location
 libopenCM3Path = ./libopencm3
 SRCLIBDIR = $(libopenCM3Path)
+# and has gotten increasinly opinionated
+OPENCM3_DIR = $(libopenCM3Path)
 
 INCLUDE_DIR = $(libopenCM3Path)/include
 LIB_DIR = $(libopenCM3Path)/lib
