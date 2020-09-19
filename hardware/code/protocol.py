@@ -113,7 +113,9 @@ class RueP():
         #   Note that we don't need to issue a 'listen' command here
         self.sendCommand(self.SETFLAGS, Uint8_t(0x01 << self.EXECPOS.numeric))
 
-
+    def positionCache(servoIdx, newPos):
+        self.sendCommand(self.LISTENONCE, protocol.Uint8_t(servoIdx))
+        self.sendCommand(self.CACHEPOS,   protocol.Uint8_t(newPos))
 
 
 
